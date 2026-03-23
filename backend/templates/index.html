@@ -42,6 +42,10 @@ margin-bottom:10px;
 color:#0d6efd;
 }
 
+#engineStatus{
+font-size:14px;
+}
+
 </style>
 
 </head>
@@ -59,6 +63,10 @@ color:#0d6efd;
 8086 RLE Compression Engine 
 </p>
 
+</div>
+
+<div id="engineStatus" class="alert alert-secondary" role="alert">
+Checking engine status...
 </div>
 
 
@@ -80,6 +88,14 @@ color:#0d6efd;
 
 <div class="mb-3 mt-3">
 <input class="form-control" type="file" name="file">
+</div>
+
+<div class="mb-3">
+<select class="form-select" name="engine">
+<option value="auto" selected>Engine: Auto</option>
+<option value="8086">Engine: 8086</option>
+<option value="python">Engine: Python</option>
+</select>
 </div>
 
 <button class="btn btn-primary w-100">
@@ -111,8 +127,48 @@ Compress File
 <input class="form-control" type="file" name="file">
 </div>
 
+<div class="mb-3">
+<select class="form-select" name="engine">
+<option value="auto" selected>Engine: Auto</option>
+<option value="8086">Engine: 8086</option>
+<option value="python">Engine: Python</option>
+</select>
+</div>
+
 <button class="btn btn-success w-100">
 Decompress File
+</button>
+
+</form>
+
+</div>
+
+</div>
+
+</div>
+
+<div class="row mt-4">
+
+<div class="col-md-12">
+
+<div class="card p-4">
+
+<h4 class="text-center">Integrity Verification</h4>
+
+<form action="/verify" method="post" enctype="multipart/form-data">
+
+<div class="mb-3 mt-3">
+<label class="form-label">Original File</label>
+<input class="form-control" type="file" name="original">
+</div>
+
+<div class="mb-3">
+<label class="form-label">Decompressed File</label>
+<input class="form-control" type="file" name="decompressed">
+</div>
+
+<button class="btn btn-warning w-100">
+Verify Integrity
 </button>
 
 </form>
@@ -137,4 +193,27 @@ Decompress File
 </div>
 
 </body>
+
+<script>
+fetch('/engine-status')
+	.then(response => response.json())
+	.then(status => {
+		const el = document.getElementById('engineStatus');
+		const ready8086 = status.compression_program && status.decompression_program && status.dosbox_available;
+
+		if (ready8086) {
+			el.className = 'alert alert-success';
+			el.textContent = '8086 engine is connected and ready.';
+			return;
+		}
+
+		el.className = 'alert alert-warning';
+		el.textContent = '8086 engine is partially available. Python fallback will be used when runtime requirements are missing.';
+	})
+	.catch(() => {
+		const el = document.getElementById('engineStatus');
+		el.className = 'alert alert-danger';
+		el.textContent = 'Could not fetch engine status.';
+	});
+</script>
 </html>

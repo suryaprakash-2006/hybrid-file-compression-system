@@ -1,135 +1,115 @@
 org 100h
 
-.data
+jmp start
 
 infile  db 'input.txt',0
 outfile db 'output.hfc',0
 
-buffer  db 200 dup(?)    
-buffer2 db 200 dup(?)     
+buffer  db 200 dup(0)
+buffer2 db 400 dup(0)
 
-msg1 db 'Cannot open input file$',0
-msg2 db 'Cannot create output file$',0
-
-.code
+msg1 db 'Cannot open input file$'
+msg2 db 'Cannot create output file$'
 
 start:
-
-
-mov ax,@data
-mov ds,ax
-
+push cs
+pop ds
 
 ; OPEN INPUT FILE
-
 mov ah,3Dh
-mov al,0
-mov dx,offset infile
+xor al,al
+mov dx,infile
 int 21h
 jc open_error
-
-mov bx,ax         
-
+mov bx,ax
 
 ; READ FILE
-
 mov ah,3Fh
 mov cx,200
-mov dx,offset buffer
+mov dx,buffer
 int 21h
+mov bp,ax
+add bp,buffer
 
-mov bp,ax          
-
-; close input file
+; CLOSE INPUT FILE
 mov ah,3Eh
 int 21h
 
-
 ; RLE COMPRESSION
-
-lea si,buffer
-lea di,buffer2
+mov si,buffer
+mov di,buffer2
 
 next_char:
+cmp si,bp
+jae done_rle
 
 mov al,[si]
-cmp si,offset buffer + 200
-je done_rle
-
 mov bl,al
 mov cx,1
 
 count_loop:
-
 inc si
-cmp si,offset buffer + 200
-je write_pair
-
+cmp si,bp
+jae write_pair
 mov al,[si]
 cmp al,bl
 jne write_pair
-
 inc cx
 jmp count_loop
 
-
 write_pair:
+mov ax,cx
 
-mov dl,cl
-add dl,'0'
-mov [di],dl
+emit_nines:
+cmp ax,9
+jbe emit_last
+mov byte [di],'9'
 inc di
-
 mov [di],bl
 inc di
+sub ax,9
+jmp emit_nines
 
+emit_last:
+add al,'0'
+mov [di],al
+inc di
+mov [di],bl
+inc di
 jmp next_char
 
-
 done_rle:
-
 ; CREATE OUTPUT FILE
-
 mov ah,3Ch
-mov cx,0
-mov dx,offset outfile
+xor cx,cx
+mov dx,outfile
 int 21h
 jc create_error
-
-mov bx,ax           ; output handle
-
+mov bx,ax
 
 ; WRITE COMPRESSED DATA
-
 mov ah,40h
 mov cx,di
-sub cx,offset buffer2
-mov dx,offset buffer2
+sub cx,buffer2
+mov dx,buffer2
 int 21h
 
-; close output file
+; CLOSE OUTPUT FILE
 mov ah,3Eh
 int 21h
 
-; exit program
-mov ah,4Ch
+exit:
+mov ax,4C00h
 int 21h
-
-
-
-; ERROR HANDLING
 
 open_error:
 mov ah,09h
-mov dx,offset msg1
+mov dx,msg1
 int 21h
 jmp exit
 
 create_error:
 mov ah,09h
-mov dx,offset msg2
+mov dx,msg2
 int 21h
-
-exit:
-mov ah,4Ch
-int 21h
+jmp exit
