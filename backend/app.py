@@ -243,9 +243,12 @@ def decompress_file(input_path: Path, original_name: str, preferred_engine: str)
     return output_path, output_name, engine_used
 
 
-def build_download_response(output_path: Path, output_name: str, engine_used: str):
+def build_download_response(output_path: Path, output_name: str, engine_used: str, metrics: dict | None = None):
     response = send_file(output_path, as_attachment=True, download_name=output_name)
     response.headers["X-Engine-Used"] = engine_used
+    if metrics:
+        for key, value in metrics.items():
+            response.headers[key] = str(value)
     return response
 
 
@@ -280,6 +283,22 @@ def compress():
     try:
         input_path, original_name = save_upload(uploaded_file)
         output_path, output_name, engine_used = compress_file(input_path, original_name, preferred_engine)
+        original_size = input_path.stat().st_size
+        compressed_size = output_path.stat().st_size
+
+        if original_size > 0:
+            space_saving = ((original_size - compressed_size) / original_size) * 100
+            compression_ratio = compressed_size / original_size
+        else:
+            space_saving = 0.0
+            compression_ratio = 1.0
+
+        metrics = {
+            "X-Original-Size": original_size,
+            "X-Compressed-Size": compressed_size,
+            "X-Space-Saving": f"{space_saving:.2f}",
+            "X-Compression-Ratio": f"{compression_ratio:.4f}",
+        }
     except ValueError as error:
         return str(error), 400
     except UnicodeDecodeError:
@@ -287,7 +306,7 @@ def compress():
     except Exception as error:
         return f"Compression failed: {error}", 500
 
-    return build_download_response(output_path, output_name, engine_used)
+    return build_download_response(output_path, output_name, engine_used, metrics)
 
 
 # -----------------------------

@@ -14,6 +14,8 @@ href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
 <link rel="stylesheet"
 href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
 
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+
 <style>
 
 body{
@@ -44,6 +46,18 @@ color:#0d6efd;
 
 #engineStatus{
 font-size:14px;
+}
+
+#metricsCard{
+display:none;
+}
+
+#ratioChart{
+max-height:260px;
+}
+
+#compressResult{
+display:none;
 }
 
 </style>
@@ -84,7 +98,7 @@ Checking engine status...
 
 <h4>Compress File</h4>
 
-<form action="/compress" method="post" enctype="multipart/form-data">
+<form id="compressForm" action="/compress" method="post" enctype="multipart/form-data">
 
 <div class="mb-3 mt-3">
 <input class="form-control" type="file" name="file">
@@ -98,7 +112,7 @@ Checking engine status...
 </select>
 </div>
 
-<button class="btn btn-primary w-100">
+<button type="submit" class="btn btn-primary w-100">
 Compress File
 </button>
 
@@ -135,11 +149,37 @@ Compress File
 </select>
 </div>
 
-<button class="btn btn-success w-100">
+<button type="submit" class="btn btn-success w-100">
 Decompress File
 </button>
 
 </form>
+
+</div>
+
+</div>
+
+</div>
+
+<div class="row mt-4">
+
+<div class="col-md-12">
+
+<div id="compressResult" class="alert" role="alert"></div>
+
+<div id="metricsCard" class="card p-4">
+
+<h4 class="text-center">Compression Efficiency</h4>
+
+<div class="row text-center mt-3">
+<div class="col-md-3 mb-2"><strong>Engine Used</strong><br><span id="metricEngine">-</span></div>
+<div class="col-md-3 mb-2"><strong>Original Size</strong><br><span id="metricOriginal">-</span></div>
+<div class="col-md-3 mb-2"><strong>Compressed Size</strong><br><span id="metricCompressed">-</span></div>
+<div class="col-md-3 mb-2"><strong>Compression Ratio</strong><br><span id="metricRatio">-</span></div>
+<div class="col-md-12 mt-2"><strong>Space Saving</strong> <span id="metricSaving">-</span></div>
+</div>
+
+<canvas id="ratioChart" class="mt-3"></canvas>
 
 </div>
 
@@ -167,7 +207,7 @@ Decompress File
 <input class="form-control" type="file" name="decompressed">
 </div>
 
-<button class="btn btn-warning w-100">
+<button type="submit" class="btn btn-warning w-100">
 Verify Integrity
 </button>
 
@@ -195,6 +235,113 @@ Verify Integrity
 </body>
 
 <script>
+let ratioChart;
+
+function formatBytes(bytes) {
+	if (!Number.isFinite(bytes) || bytes < 0) return '-';
+	if (bytes < 1024) return `${bytes} B`;
+	if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(2)} KB`;
+	return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+function updateCompressionChart(originalSize, compressedSize, engineUsed, spaceSaving, ratio) {
+	const savedBytes = Math.max(originalSize - compressedSize, 0);
+	const metricsCard = document.getElementById('metricsCard');
+
+	document.getElementById('metricEngine').textContent = engineUsed || '-';
+	document.getElementById('metricOriginal').textContent = formatBytes(originalSize);
+	document.getElementById('metricCompressed').textContent = formatBytes(compressedSize);
+	document.getElementById('metricRatio').textContent = ratio.toFixed(4);
+	document.getElementById('metricSaving').textContent = `${spaceSaving.toFixed(2)}%`;
+	metricsCard.style.display = 'block';
+
+	const ctx = document.getElementById('ratioChart');
+	if (ratioChart) {
+		ratioChart.destroy();
+	}
+
+	ratioChart = new Chart(ctx, {
+		type: 'doughnut',
+		data: {
+			labels: ['Compressed Data', 'Saved Space'],
+			datasets: [{
+				data: [compressedSize, savedBytes],
+				backgroundColor: ['#0d6efd', '#20c997'],
+				borderColor: '#ffffff',
+				borderWidth: 2,
+			}],
+		},
+		options: {
+			responsive: true,
+			plugins: {
+				legend: {
+					labels: {
+						color: '#ffffff'
+					}
+				}
+			}
+		}
+	});
+}
+
+function triggerDownload(blob, filename) {
+	const objectUrl = URL.createObjectURL(blob);
+	const anchor = document.createElement('a');
+	anchor.href = objectUrl;
+	anchor.download = filename;
+	document.body.appendChild(anchor);
+	anchor.click();
+	anchor.remove();
+	URL.revokeObjectURL(objectUrl);
+}
+
+const compressForm = document.getElementById('compressForm');
+compressForm.addEventListener('submit', async (event) => {
+	event.preventDefault();
+
+	const submitButton = compressForm.querySelector('button');
+	const originalButtonLabel = submitButton.textContent;
+	const resultBanner = document.getElementById('compressResult');
+	resultBanner.style.display = 'none';
+	submitButton.disabled = true;
+	submitButton.textContent = 'Compressing...';
+
+	try {
+		const formData = new FormData(compressForm);
+		const response = await fetch('/compress', { method: 'POST', body: formData });
+
+		if (!response.ok) {
+			const errorMessage = await response.text();
+			throw new Error(errorMessage || 'Compression request failed');
+		}
+
+		const blob = await response.blob();
+		const disposition = response.headers.get('Content-Disposition') || '';
+		const fileNameMatch = disposition.match(/filename=\"?([^\";]+)\"?/i);
+		const outputName = fileNameMatch ? fileNameMatch[1] : 'compressed.hfc';
+		triggerDownload(blob, outputName);
+
+		const originalSize = Number(response.headers.get('X-Original-Size') || 0);
+		const compressedSize = Number(response.headers.get('X-Compressed-Size') || 0);
+		const spaceSaving = Number(response.headers.get('X-Space-Saving') || 0);
+		const ratio = Number(response.headers.get('X-Compression-Ratio') || 1);
+		const engineUsed = response.headers.get('X-Engine-Used') || 'unknown';
+
+		resultBanner.className = 'alert alert-success';
+		resultBanner.textContent = `Compression successful. Output file ${outputName} generated using ${engineUsed}.`;
+		resultBanner.style.display = 'block';
+
+		updateCompressionChart(originalSize, compressedSize, engineUsed, spaceSaving, ratio);
+	} catch (error) {
+		resultBanner.className = 'alert alert-danger';
+		resultBanner.textContent = error.message || 'Compression failed';
+		resultBanner.style.display = 'block';
+	} finally {
+		submitButton.disabled = false;
+		submitButton.textContent = originalButtonLabel;
+	}
+});
+
 fetch('/engine-status')
 	.then(response => response.json())
 	.then(status => {
